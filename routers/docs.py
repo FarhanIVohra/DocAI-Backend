@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from schemas import doc_schema as schemas
 from database import get_db
 from services.ai_client import ai_client
-from services import job_service
+from services.job_service import job_service
 import bleach
 
 router = APIRouter()
@@ -12,12 +12,27 @@ router = APIRouter()
 async def generate_doc(request: schemas.DocGenerateRequest, db: Session = Depends(get_db)):
     try:
         job = job_service.get_job(db, str(request.job_id))
+        
+        # Self-healing: If job not in local SQLite, try to recover from AI service
+        if not job:
+            try:
+                ai_status = await ai_client.get_status(str(request.job_id))
+                if ai_status:
+                    job = job_service.create_job_with_id(
+                        db, 
+                        job_id=str(request.job_id), 
+                        repo_url=ai_status.get("repo_url", "unknown"),
+                        status=ai_status.get("status", "ready")
+                    )
+            except Exception:
+                raise HTTPException(status_code=404, detail="Job not found in local DB or AI service")
+
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         
         repo_meta = {
             "repo_url": job.repo_url,
-            "repo_name": "/",
+            "repo_name": job.repo_url.split("/")[-1].replace(".git", ""),
         }
         
         ai_response = await ai_client.generate_doc(str(request.job_id), request.type, repo_meta)
