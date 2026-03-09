@@ -39,4 +39,7 @@ async def generate_doc(request: schemas.DocGenerateRequest, db: Session = Depend
         sanitized_content = bleach.clean(ai_response['content'])
         return {"content": sanitized_content}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI service error: {e}")
+        import traceback
+        err_msg = f"AI service error: {e}\n{traceback.format_exc()}"
+        print(f"DEBUG: {err_msg}")
+        raise HTTPException(status_code=500, detail=err_msg)
